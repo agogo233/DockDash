@@ -133,7 +133,7 @@ func TestCRUDServiceAndDashboardFlow(t *testing.T) {
 	}
 
 	fixture.request(t, "PUT", "/api/services/"+id, `{"name":"Web 2"}`, 200)
-	fixture.request(t, "POST", "/api/services/labels", `{"serviceIds":["`+id+`"],"labels":["Important"]}`, 200)
+	fixture.requestList(t, "POST", "/api/services/labels", `{"serviceIds":["`+id+`"],"labels":["Important"]}`, 200)
 	labels := fixture.requestStrings(t, "/api/labels", 200)
 	if len(labels) != 2 {
 		t.Fatalf("expected two labels, got %v", labels)
