@@ -266,6 +266,7 @@ export const tlsCertificateResponseSchema = z.object({
 export const authStateResponseSchema = z
   .object({
     enabled: z.boolean(),
+    mode: z.enum(["none", "oidc", "password"]),
     user: z
       .object({
         sub: z.string(),
@@ -279,6 +280,8 @@ export const authStateResponseSchema = z
   .strip();
 
 export const authLogoutResponseSchema = z.object({ ok: z.literal(true) }).strip();
+
+export const passwordLoginResponseSchema = z.object({ ok: z.literal(true) }).strip();
 
 export const sseTerminalSessionResponseSchema = z.object({ sessionId: z.string() }).strip();
 

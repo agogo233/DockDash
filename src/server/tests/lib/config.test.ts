@@ -8,7 +8,17 @@ const mockRandomBytes = vi.hoisted(() => vi.fn());
 const mockLogger = vi.hoisted(() => ({ warn: vi.fn(), error: vi.fn() }));
 
 vi.mock("fs", () => ({ default: mockFs }));
-vi.mock("crypto", () => ({ default: { randomBytes: mockRandomBytes } }));
+vi.mock("crypto", async () => {
+  const actual = await vi.importActual<typeof import("crypto")>("crypto");
+
+  return {
+    default: {
+      randomBytes: mockRandomBytes,
+      scryptSync: actual.scryptSync,
+      timingSafeEqual: actual.timingSafeEqual,
+    },
+  };
+});
 vi.mock("@server/lib/logService.js", () => ({ logger: mockLogger }));
 vi.mock("dotenv/config", () => ({}));
 
@@ -189,6 +199,79 @@ describe("config", () => {
       expect(String(error)).toContain("OIDC_ISSUER, OIDC_CLIENT_ID");
       expect(String(error)).not.toContain("private-secret-value");
     }
+  });
+
+  it("disables password auth when no AUTH_* settings are supplied", async () => {
+    const config = await freshConfig();
+
+    expect(config.passwordAuthEnabled).toBe(false);
+    expect(config.authMode).toBe("none");
+  });
+
+  it("enables password auth with username and plaintext password", async () => {
+    vi.stubEnv("AUTH_USERNAME", "admin");
+    vi.stubEnv("AUTH_PASSWORD", "secret");
+    const config = await freshConfig();
+
+    expect(config.passwordAuthEnabled).toBe(true);
+    expect(config.authMode).toBe("password");
+    expect(config.verifyPassword("admin", "secret")).toBe(true);
+    expect(config.verifyPassword("admin", "wrong")).toBe(false);
+    expect(config.verifyPassword("other", "secret")).toBe(false);
+  });
+
+  it("verifies a generated password hash", async () => {
+    vi.stubEnv("AUTH_USERNAME", "admin");
+    const { generatePasswordHash } = await import("@server/lib/config.js");
+
+    vi.stubEnv("AUTH_PASSWORD_HASH", generatePasswordHash("s3cret"));
+    const config = await freshConfig();
+
+    expect(config.passwordAuthEnabled).toBe(true);
+    expect(config.verifyPassword("admin", "s3cret")).toBe(true);
+    expect(config.verifyPassword("admin", "wrong")).toBe(false);
+    expect(config.verifyPassword("other", "s3cret")).toBe(false);
+  });
+
+  it("prefers the password hash over plaintext when both are set", async () => {
+    vi.stubEnv("AUTH_USERNAME", "admin");
+    vi.stubEnv("AUTH_PASSWORD", "plaintext");
+    const { generatePasswordHash } = await import("@server/lib/config.js");
+
+    vi.stubEnv("AUTH_PASSWORD_HASH", generatePasswordHash("hashed-pw"));
+    const config = await freshConfig();
+
+    expect(config.verifyPassword("admin", "hashed-pw")).toBe(true);
+    expect(config.verifyPassword("admin", "plaintext")).toBe(false);
+  });
+
+  it("gives password auth precedence over OIDC", async () => {
+    vi.stubEnv("AUTH_USERNAME", "admin");
+    vi.stubEnv("AUTH_PASSWORD", "secret");
+    vi.stubEnv("OIDC_ISSUER", "https://idp.example");
+    vi.stubEnv("OIDC_CLIENT_ID", "dockdash");
+    vi.stubEnv("OIDC_CLIENT_SECRET", "secret");
+    const config = await freshConfig();
+
+    expect(config.authMode).toBe("password");
+  });
+
+  it.each(["AUTH_USERNAME", "AUTH_PASSWORD", "AUTH_PASSWORD_HASH"])(
+    "rejects partial password configuration (%s)",
+    async (env) => {
+      vi.stubEnv(env, "value");
+
+      await expect(freshConfig()).rejects.toThrow(
+        "Incomplete password authentication configuration",
+      );
+    },
+  );
+
+  it("rejects an invalid password hash format", async () => {
+    vi.stubEnv("AUTH_USERNAME", "admin");
+    vi.stubEnv("AUTH_PASSWORD_HASH", "not-a-valid-hash");
+
+    await expect(freshConfig()).rejects.toThrow("Invalid AUTH_PASSWORD_HASH");
   });
 
   it("keeps the authentication check fail-closed if configuration becomes incomplete", async () => {

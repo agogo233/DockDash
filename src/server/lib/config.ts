@@ -42,8 +42,16 @@ class Config {
   private _sessionSecret: string | undefined;
 
   constructor() {
-    // Partial provider configuration must never silently bypass authentication.
-    void this.oidcEnabled;
+    // Password authentication takes precedence: when enabled, ignore any OIDC
+    // settings (including partial ones) so a misconfigured provider never
+    // blocks startup while local credentials are active.
+    if (!this.passwordAuthEnabled) {
+      // Partial provider configuration must never silently bypass authentication.
+      void this.oidcEnabled;
+    }
+
+    // Partial password configuration must never silently disable authentication.
+    this.validatePasswordConfig();
 
     // Reject invalid numeric settings before integrations or background jobs start.
     for (const key of Object.keys(CONFIG_SCHEMA) as ConfigKey[]) {
@@ -165,6 +173,75 @@ class Config {
     return true;
   }
 
+  get passwordAuthEnabled(): boolean {
+    const username = this.read("authUsername")?.trim();
+    const password = this.read("authPassword")?.trim();
+    const hash = this.read("authPasswordHash")?.trim();
+
+    return Boolean(username && (password || hash));
+  }
+
+  get authMode(): "none" | "oidc" | "password" {
+    if (this.passwordAuthEnabled) return "password";
+
+    return this.oidcEnabled ? "oidc" : "none";
+  }
+
+  verifyPassword(username: string, password: string): boolean {
+    if (!this.passwordAuthEnabled) return false;
+
+    const expectedUsername = this.read("authUsername")?.trim() ?? "";
+
+    if (!this.safeEqual(username, expectedUsername)) return false;
+
+    const hash = this.read("authPasswordHash")?.trim();
+
+    if (hash) {
+      const parsed = parsePasswordHash(hash);
+
+      if (!parsed) return false;
+
+      const derived = crypto.scryptSync(password, parsed.salt, parsed.keylen, {
+        N: parsed.N,
+        r: parsed.r,
+        p: parsed.p,
+        maxmem: 128 * 1024 * 1024,
+      });
+
+      return this.safeEqual(derived, parsed.hash);
+    }
+
+    const expectedPassword = this.read("authPassword")?.trim() ?? "";
+
+    return this.safeEqual(password, expectedPassword);
+  }
+
+  private safeEqual(a: string | Buffer, b: string | Buffer): boolean {
+    const bufA = Buffer.from(a);
+    const bufB = Buffer.from(b);
+
+    if (bufA.length !== bufB.length) return false;
+
+    return crypto.timingSafeEqual(bufA, bufB);
+  }
+
+  private validatePasswordConfig(): void {
+    const username = this.read("authUsername")?.trim();
+    const password = this.read("authPassword")?.trim();
+    const hash = this.read("authPasswordHash")?.trim();
+    const anySet = Boolean(username || password || hash);
+
+    if (anySet && !(username && (password || hash))) {
+      throw new Error(
+        "Incomplete password authentication configuration: set AUTH_USERNAME and AUTH_PASSWORD (or AUTH_PASSWORD_HASH), or unset all three to disable password authentication",
+      );
+    }
+
+    if (hash && !parsePasswordHash(hash)) {
+      throw new Error("Invalid AUTH_PASSWORD_HASH: expected format scrypt$N$r$p$salt$hash");
+    }
+  }
+
   get sessionSecret(): string {
     const fromEnv = this.read("sessionSecret");
 
@@ -227,3 +304,60 @@ class Config {
 interface Config extends SchemaConfig {}
 
 export const config = new Config();
+
+export const SCRYPT_N = 16384;
+export const SCRYPT_R = 8;
+export const SCRYPT_P = 1;
+export const SCRYPT_KEYLEN = 64;
+
+const SCRYPT_MAXMEM = 128 * 1024 * 1024;
+
+interface ScryptParams {
+  N: number;
+  r: number;
+  p: number;
+  salt: Buffer;
+  hash: Buffer;
+  keylen: number;
+}
+
+function parsePasswordHash(value: string): ScryptParams | null {
+  const parts = value.split("$");
+
+  if (parts.length !== 6 || parts[0] !== "scrypt") return null;
+
+  const [, n, r, p, salt, hash] = parts;
+
+  if (!/^\d+$/.test(n) || !/^\d+$/.test(r) || !/^\d+$/.test(p)) return null;
+
+  const N = Number(n);
+  const rNum = Number(r);
+  const pNum = Number(p);
+
+  if (N < 2 || (N & (N - 1)) !== 0) return null;
+
+  if (N > 1048576) return null;
+
+  if (rNum < 1 || pNum < 1) return null;
+
+  const saltBuf = Buffer.from(salt, "hex");
+  const hashBuf = Buffer.from(hash, "hex");
+
+  if (saltBuf.length === 0 || hashBuf.length === 0) return null;
+
+  return { N, r: rNum, p: pNum, salt: saltBuf, hash: hashBuf, keylen: hashBuf.length };
+}
+
+/** Generate a scrypt$N$r$p$salt$hash value for AUTH_PASSWORD_HASH. */
+export function generatePasswordHash(password: string): string {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const saltBuf = Buffer.from(salt, "hex");
+  const derived = crypto.scryptSync(password, saltBuf, SCRYPT_KEYLEN, {
+    N: SCRYPT_N,
+    r: SCRYPT_R,
+    p: SCRYPT_P,
+    maxmem: SCRYPT_MAXMEM,
+  });
+
+  return `scrypt$${SCRYPT_N}$${SCRYPT_R}$${SCRYPT_P}$${salt}$${derived.toString("hex")}`;
+}

@@ -24,6 +24,9 @@ const mockConfig = vi.hoisted(() => ({
   spikeDurationThreshold: 300,
   fileExplorerEnabled: true,
   terminalEnabled: true,
+  authUsername: "admin",
+  authPassword: "super-secret-password",
+  authPasswordHash: "scrypt$16384$8$1$deadbeef$cafebabe",
   read(key: string) {
     return (this as Record<string, unknown>)[key];
   },
@@ -67,6 +70,15 @@ describe("GET /api/config", () => {
       fileExplorerEnabled: mockConfig.fileExplorerEnabled,
       terminalEnabled: mockConfig.terminalEnabled,
     });
+  });
+
+  it("does not expose password authentication secrets", async () => {
+    const res = await request(app).get("/api/config");
+
+    expect(res.status).toBe(200);
+    expect(res.body).not.toHaveProperty("authUsername");
+    expect(res.body).not.toHaveProperty("authPassword");
+    expect(res.body).not.toHaveProperty("authPasswordHash");
   });
 });
 

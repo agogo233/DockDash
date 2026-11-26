@@ -6,9 +6,13 @@ const mockConfig = vi.hoisted(() => ({
   oidcEnabled: false,
   oidcRedirectUri: null as string | null,
   oidcScopes: "openid profile email",
+  authMode: "none" as "none" | "oidc" | "password",
+  passwordAuthEnabled: false,
+  verifyPassword: vi.fn(() => false),
+  read: vi.fn((key: string) => (key === "authUsername" ? "admin" : null)),
 }));
 const mockOidcService = vi.hoisted(() => ({ getConfig: vi.fn() }));
-const mockLogger = vi.hoisted(() => ({ error: vi.fn() }));
+const mockLogger = vi.hoisted(() => ({ error: vi.fn(), warn: vi.fn() }));
 const mockOpenid = vi.hoisted(() => ({
   authorizationCodeGrant: vi.fn(),
   buildAuthorizationUrl: vi.fn(),
@@ -42,6 +46,7 @@ function createApp(sessionData: Record<string, unknown> = {}, callbacks: Session
     destroy: vi.fn((callback: () => void) => callback()),
   };
 
+  app.use(express.json());
   app.use(((req, _res, next) => {
     Object.defineProperty(req, "session", { value: session, writable: true });
     next();
@@ -56,6 +61,9 @@ describe("auth routes", () => {
     vi.clearAllMocks();
     mockConfig.oidcEnabled = false;
     mockConfig.oidcRedirectUri = null;
+    mockConfig.authMode = "none";
+    mockConfig.passwordAuthEnabled = false;
+    mockConfig.verifyPassword.mockReturnValue(false);
     mockOidcService.getConfig.mockResolvedValue({ serverMetadata: () => ({}) });
     mockOpenid.randomPKCECodeVerifier.mockReturnValue("verifier");
     mockOpenid.calculatePKCECodeChallenge.mockResolvedValue("challenge");
@@ -68,16 +76,17 @@ describe("auth routes", () => {
     const response = await request(app).get("/auth/me");
 
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ enabled: false, user: null });
+    expect(response.body).toEqual({ enabled: false, mode: "none", user: null });
   });
 
   it("reports the authenticated user when OIDC is enabled", async () => {
+    mockConfig.authMode = "oidc";
     mockConfig.oidcEnabled = true;
     const user = { sub: "user-1", email: "user@example.com" };
     const { app } = createApp({ user });
     const response = await request(app).get("/auth/me");
 
-    expect(response.body).toEqual({ enabled: true, user });
+    expect(response.body).toEqual({ enabled: true, mode: "oidc", user });
   });
 
   it("redirects disabled login attempts to the application", async () => {
@@ -173,5 +182,92 @@ describe("auth routes", () => {
     expect(response.status).toBe(200);
     expect(response.body).toEqual({ ok: true });
     expect(session.destroy).toHaveBeenCalledOnce();
+  });
+
+  it("reports password mode with no user before login", async () => {
+    mockConfig.authMode = "password";
+    mockConfig.passwordAuthEnabled = true;
+    const { app } = createApp();
+    const response = await request(app).get("/auth/me");
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ enabled: true, mode: "password", user: null });
+  });
+
+  it("reports the local user once authenticated in password mode", async () => {
+    mockConfig.authMode = "password";
+    mockConfig.passwordAuthEnabled = true;
+    const { app } = createApp({ authenticated: true });
+    const response = await request(app).get("/auth/me");
+
+    expect(response.body).toEqual({
+      enabled: true,
+      mode: "password",
+      user: { sub: "local", name: "admin" },
+    });
+  });
+
+  it("rejects password login when password auth is disabled", async () => {
+    const { app } = createApp();
+    const response = await request(app)
+      .post("/auth/password/login")
+      .send({ username: "admin", password: "x" });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: "Password authentication is not enabled" });
+  });
+
+  it("rejects malformed login payloads", async () => {
+    mockConfig.passwordAuthEnabled = true;
+    const { app } = createApp();
+    const response = await request(app).post("/auth/password/login").send({ username: "admin" });
+
+    expect(response.status).toBe(400);
+    expect(response.body).toEqual({ error: "Invalid request" });
+  });
+
+  it("logs and returns 401 on invalid credentials", async () => {
+    mockConfig.authMode = "password";
+    mockConfig.passwordAuthEnabled = true;
+    mockConfig.verifyPassword.mockReturnValue(false);
+    const { app } = createApp();
+    const response = await request(app)
+      .post("/auth/password/login")
+      .send({ username: "admin", password: "bad" });
+
+    expect(response.status).toBe(401);
+    expect(response.body).toEqual({ error: "Invalid username or password" });
+    expect(mockLogger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('password login failed for "admin"'),
+    );
+  });
+
+  it("regenerates the session and authenticates on valid credentials", async () => {
+    mockConfig.authMode = "password";
+    mockConfig.passwordAuthEnabled = true;
+    mockConfig.verifyPassword.mockReturnValue(true);
+    const { app, session } = createApp();
+    const response = await request(app)
+      .post("/auth/password/login")
+      .send({ username: "admin", password: "secret" });
+
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ ok: true });
+    expect(session.regenerate).toHaveBeenCalledOnce();
+    expect(session.save).toHaveBeenCalledOnce();
+    expect(session.authenticated).toBe(true);
+    expect(session.user).toEqual({ sub: "local", name: "admin" });
+  });
+
+  it("blocks cross-site password login attempts", async () => {
+    mockConfig.passwordAuthEnabled = true;
+    const { app } = createApp();
+    const response = await request(app)
+      .post("/auth/password/login")
+      .set("Origin", "https://evil.example")
+      .send({ username: "admin", password: "x" });
+
+    expect(response.status).toBe(403);
+    expect(response.body).toEqual({ error: "Cross-origin request blocked" });
   });
 });

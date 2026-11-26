@@ -137,10 +137,11 @@ DockDash is a powerful tool: it can exec into containers, read/write their files
 
 ### Authentication
 
-DockDash ships with no authentication enforced by default. You **must** put it behind authentication before exposing it on any untrusted network. Two supported options:
+DockDash ships with no authentication enforced by default. You **must** put it behind authentication before exposing it on any untrusted network. Three supported options:
 
-1. **Built-in OIDC** — set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (and `SESSION_SECRET`). Works with Keycloak, Authentik, Authelia, Google, etc.
-2. **Reverse proxy** — front DockDash with Caddy / Traefik / nginx + an auth layer (Authelia, oauth2-proxy, basic auth, Tailscale, …). Bind DockDash only to `127.0.0.1` (or a private Docker network) so it isn't reachable directly:
+1. **Built-in password** — set `AUTH_USERNAME` with `AUTH_PASSWORD` (or `AUTH_PASSWORD_HASH`, preferred) plus `SESSION_SECRET`. Takes precedence over OIDC; failed logins are rate-limited, logged, and delayed.
+2. **Built-in OIDC** — set `OIDC_ISSUER`, `OIDC_CLIENT_ID`, `OIDC_CLIENT_SECRET` (and `SESSION_SECRET`). Works with Keycloak, Authentik, Authelia, Google, etc.
+3. **Reverse proxy** — front DockDash with Caddy / Traefik / nginx + an auth layer (Authelia, oauth2-proxy, basic auth, Tailscale, …). Bind DockDash only to `127.0.0.1` (or a private Docker network) so it isn't reachable directly:
 
    ```yaml
    ports:

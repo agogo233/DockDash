@@ -3,13 +3,21 @@ import type { NextFunction, Request, Response } from "express";
 import { config } from "../lib/config.js";
 
 export function requireAuth(req: Request, res: Response, next: NextFunction): void {
-  if (!config.oidcEnabled) {
+  const mode = config.authMode;
+
+  if (mode === "none") {
     next();
 
     return;
   }
 
-  if (req.session?.user) {
+  if (mode === "oidc" && req.session?.user) {
+    next();
+
+    return;
+  }
+
+  if (mode === "password" && req.session?.authenticated) {
     next();
 
     return;

@@ -9,6 +9,18 @@
     "updateAvailable": "{{version}} is available",
     "releaseNotes": "Release notes"
   },
+  "login": {
+    "signIn": "Sign in to continue",
+    "username": "Username",
+    "password": "Password",
+    "submit": "Sign in",
+    "submitting": "Signing in…",
+    "invalidCredentials": "Invalid username or password",
+    "rateLimited": "Too many attempts. Please try again later.",
+    "empty": "Enter a username and password",
+    "ssoLogin": "Login with SSO",
+    "authFailed": "Authentication failed. Please try again."
+  },
   "services": {
     "title": "Services",
     "count": "{{count}} service",

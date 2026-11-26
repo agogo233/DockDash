@@ -12,6 +12,7 @@ interface AuthUser {
 
 interface AuthState {
   enabled: boolean;
+  mode: "none" | "oidc" | "password";
   user: AuthUser | null;
   isLoading: boolean;
   logout: () => Promise<void>;
@@ -19,6 +20,7 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState>({
   enabled: false,
+  mode: "none",
   user: null,
   isLoading: true,
   logout: async () => {},
@@ -26,6 +28,7 @@ const AuthContext = createContext<AuthState>({
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [enabled, setEnabled] = useState(false);
+  const [mode, setMode] = useState<AuthState["mode"]>("none");
   const [user, setUser] = useState<AuthUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -34,10 +37,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .getState()
       .then((res) => {
         setEnabled(res.data.enabled);
+        setMode(res.data.mode);
         setUser(res.data.user);
       })
       .catch(() => {
         setEnabled(false);
+        setMode("none");
         setUser(null);
       })
       .finally(() => setIsLoading(false));
@@ -50,7 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ enabled, user, isLoading, logout }}>
+    <AuthContext.Provider value={{ enabled, mode, user, isLoading, logout }}>
       {children}
     </AuthContext.Provider>
   );

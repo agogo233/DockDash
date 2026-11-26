@@ -27,6 +27,7 @@ import {
   filesResponseSchema,
   healthHistoryResponseSchema,
   kubernetesClusterHealthResponseSchema,
+  passwordLoginResponseSchema,
   resourceHistoryResponseSchema,
   savePositionsResponseSchema,
   serviceLabelsResponseSchema,
@@ -91,6 +92,11 @@ export const tlsCertificateApi = {
 export const authApi = {
   getState: () => validated(axios.get("/auth/me"), authStateResponseSchema),
   logout: () => validated(axios.post("/auth/logout"), authLogoutResponseSchema),
+  passwordLogin: (username: string, password: string) =>
+    validated(
+      axios.post("/auth/password/login", { username, password }),
+      passwordLoginResponseSchema,
+    ),
 };
 
 // Service management APIs

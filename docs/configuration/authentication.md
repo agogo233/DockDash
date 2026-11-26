@@ -7,6 +7,32 @@ description: Protect DockDash with built-in OIDC or an authenticated reverse pro
 DockDash does not enforce authentication by default. Configure authentication before exposing it to an untrusted network.
 :::
 
+## Password authentication
+
+Enable a single local administrator account without an identity provider. It takes precedence over OIDC: when password authentication is enabled, any OIDC settings are ignored.
+
+| Variable            | Default | Description                                                                    |
+| ------------------- | ------- | ------------------------------------------------------------------------------ |
+| `AUTH_USERNAME`     | unset   | Administrator username; enables password authentication when set with a secret |
+| `AUTH_PASSWORD`     | unset   | Plaintext password. Use `AUTH_PASSWORD_HASH` instead where possible            |
+| `AUTH_PASSWORD_HASH`| unset   | Scrypt hash, preferred over `AUTH_PASSWORD`. Format `scrypt$N$r$p$salt$hash`   |
+
+Authentication is enabled when `AUTH_USERNAME` is set together with either `AUTH_PASSWORD` or `AUTH_PASSWORD_HASH`. Supplying only part of these settings fails startup so a misconfiguration can never silently leave the app unsecured. Invalid hash formats are rejected at startup.
+
+Generate a hash with the built-in scrypt parameters (`N=16384, r=8, p=1, keylen=64`):
+
+```bash
+node -e "const c=require('crypto');const s=c.randomBytes(16).toString('hex');const h=c.scryptSync(process.argv[1],s,64,{N:16384,r:8,p:1}).toString('hex');console.log('scrypt$16384$8$1$'+s+'$'+h)" 'your-password'
+```
+
+```properties
+AUTH_USERNAME=admin
+AUTH_PASSWORD_HASH=scrypt$16384$8$1$<salt>$<hash>
+SESSION_SECRET=replace-with-a-long-random-value
+```
+
+The login page posts to `/auth/password/login`. Failed attempts are rate-limited (5 per 15 minutes per IP), logged without the password, and delayed by 500 ms. A `SESSION_SECRET` is required so sessions survive restarts.
+
 ## Built-in OIDC
 
 OIDC is enabled when all three required provider settings are present:

@@ -136,6 +136,10 @@ export const terminalInputRequestSchema = z
   .object({ sessionId: nonEmptyString, data: z.string() })
   .strict();
 
+export const passwordLoginRequestSchema = z
+  .object({ username: nonEmptyString.max(1024), password: nonEmptyString.max(1024) })
+  .strict();
+
 export type CreateServiceRequest = z.infer<typeof createServiceRequestSchema>;
 export type UpdateServiceRequest = z.infer<typeof updateServiceRequestSchema>;
 export type AssignServiceLabelsRequest = z.infer<typeof assignServiceLabelsRequestSchema>;
@@ -144,3 +148,4 @@ export type UpdateLinkRequest = z.infer<typeof updateLinkRequestSchema>;
 export type SavePositionsRequest = z.infer<typeof savePositionsRequestSchema>;
 export type PositionUpdate = SavePositionsRequest["positions"][number];
 export type TerminalInputRequest = z.infer<typeof terminalInputRequestSchema>;
+export type PasswordLoginRequest = z.infer<typeof passwordLoginRequestSchema>;

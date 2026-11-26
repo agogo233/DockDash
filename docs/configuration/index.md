@@ -27,8 +27,14 @@ The schema-driven settings in `src/shared/configSchema.ts` are the source of tru
 ## Authentication
 
 :::caution
-See the [authentication guide](./authentication/) for the complete OIDC settings reference, setup instructions, and authenticated reverse-proxy guidance.
+See the [authentication guide](./authentication/) for the complete password and OIDC settings reference, setup instructions, and authenticated reverse-proxy guidance.
 :::
+
+| Variable             | Default | Description                                                                      |
+| -------------------- | ------- | -------------------------------------------------------------------------------- |
+| `AUTH_USERNAME`      | unset   | Administrator username; enables local password authentication with a secret      |
+| `AUTH_PASSWORD`      | unset   | Plaintext password (use `AUTH_PASSWORD_HASH` where possible)                     |
+| `AUTH_PASSWORD_HASH` | unset   | Scrypt hash `scrypt$N$r$p$salt$hash`; preferred over `AUTH_PASSWORD`             |
 
 ## Discovery
 
