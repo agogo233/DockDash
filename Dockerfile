@@ -1,7 +1,8 @@
 FROM node:26-alpine AS client
 WORKDIR /app
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-RUN npm install --global pnpm@11.20.0 && pnpm install --frozen-lockfile
+RUN apk add --no-cache python3 make g++ && \
+    npm install --global pnpm@11.20.0 && pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm build
 
