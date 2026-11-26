@@ -134,7 +134,7 @@ func (s *Store) Save(writer http.ResponseWriter, sess *Session) error {
 }
 
 func (s *Store) writeCookie(writer http.ResponseWriter, id string) {
-	value := url.QueryEscape("s:" + signature(id, s.secret))
+	value := url.QueryEscape("s:" + id + "." + signature(id, s.secret))
 	cookie := &http.Cookie{
 		Name:     cookieName,
 		Value:    value,
