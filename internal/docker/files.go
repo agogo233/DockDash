@@ -221,7 +221,8 @@ func (m *Manager) WriteFile(ctx context.Context, service repo.Service, path stri
 			source.Close()
 			return errors.New("Only regular files can be edited")
 		}
-		mode, uid, gid, found = header.Mode, header.Uid, header.Gid
+		mode, uid, gid = header.Mode, header.Uid, header.Gid
+		found = true
 		break
 	}
 	source.Close()
