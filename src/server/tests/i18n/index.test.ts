@@ -9,9 +9,10 @@ describe("server i18n", () => {
     expect(i18next.options.fallbackLng).toEqual(["en"]);
   });
 
-  it("registers the English and Brazilian Portuguese resources", () => {
+  it("registers the English, Brazilian Portuguese and Simplified Chinese resources", () => {
     expect(i18next.hasResourceBundle("en", "translation")).toBe(true);
     expect(i18next.hasResourceBundle("pt-BR", "translation")).toBe(true);
+    expect(i18next.hasResourceBundle("zh-CN", "translation")).toBe(true);
   });
 
   it("translates using an explicit language override", () => {
@@ -19,6 +20,7 @@ describe("server i18n", () => {
     expect(t("notifications.updateAvailable", undefined, "pt-BR")).toBe(
       "⚠️ Atualização Disponível",
     );
+    expect(t("notifications.updateAvailable", undefined, "zh-CN")).toBe("⚠️ 有可用更新");
   });
 
   it("falls back to English for an unsupported language", () => {

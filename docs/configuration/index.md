@@ -21,7 +21,7 @@ The schema-driven settings in `src/shared/configSchema.ts` are the source of tru
 | `PORT`        | `3001`                  | HTTP port used by the server and published by Docker Compose                        |
 | `LOG_LEVEL`   | `info`                  | `error`, `warn`, `info`, or `debug`                                                 |
 | `DB_PATH`     | `/app/data/dockdash.db` | SQLite database path                                                                |
-| `LOCALE`      | `en`                    | Locale for server-generated notification messages                                   |
+| `LOCALE`      | `en`                    | Locale for server-generated notification messages (`en`, `pt-BR`, or `zh-CN`)       |
 | `TRUST_PROXY` | `loopback, uniquelocal` | Express trusted-proxy setting; use `true` only when every upstream proxy is trusted |
 
 ## Authentication

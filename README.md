@@ -60,7 +60,7 @@ This makes version pinning the expected workflow rather than an obstacle. You de
 - **Terminal** — provides an interactive, theme-aware shell inside containers through xterm.js
 - **Apprise notifications** — also alerts on service failures and recovery and configurable CPU or memory thresholds
 - **Interactive topology canvas** — drag, group, and resize service nodes; draw and label connections; snap to grid; zoom, pan, and fit the topology to the screen
-- **Themes and localization** — includes multiple built-in themes plus English and Brazilian Portuguese interfaces
+- **Themes and localization** — includes multiple built-in themes plus English, Brazilian Portuguese, and Simplified Chinese interfaces
 - **OIDC authentication** — optional SSO through standard OpenID Connect providers such as Keycloak, Authentik, Authelia, and Google
 
 ## Screenshots
