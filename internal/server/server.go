@@ -12,18 +12,20 @@ import (
 	"dockdash/internal/assets"
 	"dockdash/internal/config"
 	"dockdash/internal/db"
+	"dockdash/internal/docker"
 	"dockdash/internal/session"
 )
 
 type API struct {
-	cfg   *config.Config
-	db    *sql.DB
-	store *session.Store
-	ready atomic.Bool
+	cfg    *config.Config
+	db     *sql.DB
+	store  *session.Store
+	docker *docker.Manager
+	ready  atomic.Bool
 }
 
 func New(cfg *config.Config, database *sql.DB, store *session.Store) *API {
-	return &API{cfg: cfg, db: database, store: store}
+	return &API{cfg: cfg, db: database, store: store, docker: docker.NewManager(cfg.DockerHosts)}
 }
 
 func (a *API) MarkReady()    { a.ready.Store(true) }
@@ -43,6 +45,7 @@ func (a *API) Handler() http.Handler {
 	protected := http.NewServeMux()
 	protected.HandleFunc("GET /api/config", a.configHandler)
 	a.registerCRUDRoutes(protected)
+	a.registerContainerRoutes(protected)
 	apiMux.Handle("/api/", withSameOrigin(a.cfg, withAuth(a.cfg, protected)))
 
 	apiHandler := withSession(a.store, withBodyLimit(100*1024, withRateLimit(apiLimiter, a.cfg, apiMux)))

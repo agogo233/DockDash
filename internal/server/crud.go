@@ -196,6 +196,7 @@ func (a *API) listServices(writer http.ResponseWriter, _ *http.Request) {
 		writeRepoError(writer, err)
 		return
 	}
+	a.enrichServices(services)
 	writeJSON(writer, http.StatusOK, services)
 }
 
@@ -229,6 +230,11 @@ func (a *API) getDashboard(writer http.ResponseWriter, _ *http.Request) {
 	if links == nil {
 		links = []repo.ServiceLink{}
 	}
+	for i := range services {
+		if services[i].Source == "docker" {
+			services[i].SourceName = a.docker.SourceName(services[i].Service)
+		}
+	}
 	writeJSON(writer, http.StatusOK, map[string]any{"services": services, "links": links})
 }
 
@@ -237,6 +243,9 @@ func (a *API) getService(writer http.ResponseWriter, request *http.Request) {
 	if err != nil {
 		writeError(writer, http.StatusNotFound, "Service not found")
 		return
+	}
+	if service.Source == "docker" {
+		service.SourceName = a.docker.SourceName(service)
 	}
 	writeJSON(writer, http.StatusOK, service)
 }
@@ -333,7 +342,9 @@ func (a *API) createService(writer http.ResponseWriter, request *http.Request) {
 		writeRepoError(writer, err)
 		return
 	}
-	writeJSON(writer, http.StatusCreated, saved)
+	enriched := []repo.Service{saved}
+	a.enrichServices(enriched)
+	writeJSON(writer, http.StatusCreated, enriched[0])
 }
 
 func (a *API) updateService(writer http.ResponseWriter, request *http.Request) {
@@ -431,7 +442,9 @@ func (a *API) updateService(writer http.ResponseWriter, request *http.Request) {
 		writeError(writer, http.StatusNotFound, "Service not found")
 		return
 	}
-	writeJSON(writer, http.StatusOK, service)
+	enriched := []repo.Service{service}
+	a.enrichServices(enriched)
+	writeJSON(writer, http.StatusOK, enriched[0])
 }
 
 func (a *API) deleteService(writer http.ResponseWriter, request *http.Request) {
@@ -468,6 +481,7 @@ func (a *API) assignLabels(writer http.ResponseWriter, request *http.Request) {
 		writeRepoError(writer, err)
 		return
 	}
+	a.enrichServices(services)
 	writeJSON(writer, http.StatusOK, services)
 }
 
