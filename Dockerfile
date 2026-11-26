@@ -6,7 +6,7 @@ RUN apk add --no-cache python3 make g++ && \
 COPY . .
 RUN pnpm build
 
-FROM golang:1.24-alpine AS builder
+FROM golang:1.26-alpine AS builder
 RUN apk add --no-cache gcc musl-dev
 WORKDIR /src
 COPY go.mod ./

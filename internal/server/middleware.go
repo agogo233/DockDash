@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -97,25 +98,92 @@ func (l *limiter) allow(key string) (bool, int, int) {
 	return true, remaining - 1, int(l.window.Seconds())
 }
 
-func withRateLimit(l *limiter, next http.Handler) http.Handler {
+func withRateLimit(l *limiter, cfg *config.Config, next http.Handler) http.Handler {
+	return withRateLimitMessage(l, cfg, next, "Too many API requests, please try again later")
+}
+
+func withRateLimitMessage(l *limiter, cfg *config.Config, next http.Handler, message string) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
-		allowed, remaining, reset := l.allow(clientIP(request))
+		allowed, remaining, reset := l.allow(clientIP(cfg, request))
 		writer.Header().Set("RateLimit", "limit="+strconv.Itoa(l.limit)+", remaining="+strconv.Itoa(remaining)+", reset="+strconv.Itoa(reset))
 		writer.Header().Set("RateLimit-Policy", strconv.Itoa(l.limit)+";w="+strconv.Itoa(reset))
 		if !allowed {
-			writeError(writer, http.StatusTooManyRequests, "Too many API requests, please try again later")
+			writeError(writer, http.StatusTooManyRequests, message)
 			return
 		}
 		next.ServeHTTP(writer, request)
 	})
 }
 
-func clientIP(request *http.Request) string {
-	host := request.RemoteAddr
-	if index := strings.LastIndex(host, ":"); index >= 0 {
-		host = host[:index]
+func trustedProxy(cfg *config.Config, request *http.Request) bool {
+	value := strings.TrimSpace(cfg.TrustProxy)
+	if value == "" || value == "false" {
+		return false
+	}
+	if value == "true" {
+		return true
+	}
+	ip := net.ParseIP(remoteHost(request))
+	if ip == nil {
+		return false
+	}
+	for _, token := range strings.Split(value, ",") {
+		switch strings.TrimSpace(token) {
+		case "loopback":
+			if ip.IsLoopback() {
+				return true
+			}
+		case "uniquelocal":
+			if ip.IsPrivate() || ip.IsLinkLocalUnicast() {
+				return true
+			}
+		default:
+			if parsed := net.ParseIP(strings.TrimSpace(token)); parsed != nil && parsed.Equal(ip) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func clientIP(cfg *config.Config, request *http.Request) string {
+	if trustedProxy(cfg, request) {
+		forwarded := request.Header.Get("X-Forwarded-For")
+		if forwarded != "" {
+			if index := strings.Index(forwarded, ","); index >= 0 {
+				return strings.TrimSpace(forwarded[:index])
+			}
+			return strings.TrimSpace(forwarded)
+		}
+	}
+	return remoteHost(request)
+}
+
+func remoteHost(request *http.Request) string {
+	host, _, err := net.SplitHostPort(request.RemoteAddr)
+	if err != nil {
+		return request.RemoteAddr
 	}
 	return host
+}
+
+func forwardedScheme(cfg *config.Config, request *http.Request) string {
+	if request.TLS != nil {
+		return "https"
+	}
+	if trustedProxy(cfg, request) && request.Header.Get("X-Forwarded-Proto") == "https" {
+		return "https"
+	}
+	return "http"
+}
+
+func forwardedHost(cfg *config.Config, request *http.Request) string {
+	if trustedProxy(cfg, request) {
+		if host := request.Header.Get("X-Forwarded-Host"); host != "" {
+			return host
+		}
+	}
+	return request.Host
 }
 
 func withSameOrigin(cfg *config.Config, next http.Handler) http.Handler {
@@ -128,15 +196,8 @@ func withSameOrigin(cfg *config.Config, next http.Handler) http.Handler {
 		if site == "" {
 			origin := request.Header.Get("Origin")
 			if origin != "" {
-				host := request.Header.Get("X-Forwarded-Host")
-				if host == "" {
-					host = request.Host
-				}
-				scheme := "http"
-				if request.TLS != nil || request.Header.Get("X-Forwarded-Proto") == "https" {
-					scheme = "https"
-				}
-				if origin != scheme+"://"+host {
+				expected := forwardedScheme(cfg, request) + "://" + forwardedHost(cfg, request)
+				if origin != expected {
 					writeError(writer, http.StatusForbidden, "Cross-origin request blocked")
 					return
 				}

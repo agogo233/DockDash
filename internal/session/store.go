@@ -69,6 +69,10 @@ func (s *Store) newSession() *Session {
 	}
 }
 
+func (s *Store) Blank() *Session {
+	return s.newSession()
+}
+
 func (s *Store) Get(request *http.Request) *Session {
 	cookie, err := request.Cookie(cookieName)
 	if err != nil {

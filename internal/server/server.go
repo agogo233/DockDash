@@ -40,18 +40,69 @@ func (a *API) Handler() http.Handler {
 	})
 	apiMux.HandleFunc("GET /api/health", a.readyHandler)
 	apiMux.HandleFunc("GET /api/health/ready", a.readyHandler)
-	apiMux.Handle("/api/", withSameOrigin(a.cfg, withAuth(a.cfg, http.HandlerFunc(notFound))))
+	protected := http.NewServeMux()
+	protected.HandleFunc("GET /api/config", a.configHandler)
+	apiMux.Handle("/api/", withSameOrigin(a.cfg, withAuth(a.cfg, protected)))
 
-	apiHandler := withSession(a.store, withBodyLimit(100*1024, withRateLimit(apiLimiter, apiMux)))
+	apiHandler := withSession(a.store, withBodyLimit(100*1024, withRateLimit(apiLimiter, a.cfg, apiMux)))
+
+	authHandlers := NewAuth(a.cfg, a.store)
+	authMux := http.NewServeMux()
+	authMux.HandleFunc("GET /auth/me", authHandlers.Me)
+	authMux.HandleFunc("GET /auth/login", authHandlers.Login)
+	authMux.HandleFunc("GET /auth/callback", authHandlers.Callback)
+	authMux.HandleFunc("POST /auth/logout", authHandlers.Logout)
+	authMux.HandleFunc("POST /auth/password/login", withSameOrigin(a.cfg,
+		withRateLimitMessage(newLimiter(5, 15*time.Minute), a.cfg,
+			http.HandlerFunc(authHandlers.PasswordLogin), authRateLimitMessage)).ServeHTTP)
+	authHandler := withSession(a.store, withBodyLimit(100*1024,
+		withRateLimitMessage(newLimiter(20, 15*time.Minute), a.cfg, authMux, authRateLimitMessage)))
 
 	web, err := fs.Sub(assets.Web, "web")
 	if err != nil {
 		panic(err)
 	}
 	root := http.NewServeMux()
+	root.Handle("/auth/", authHandler)
 	root.Handle("/api/", apiHandler)
-	root.Handle("/", spaHandler(web, http.FileServer(http.FS(web)), newLimiter(300, time.Minute)))
+	root.Handle("/", spaHandler(a.cfg, web, http.FileServer(http.FS(web)), newLimiter(300, time.Minute)))
 	return root
+}
+
+func (a *API) configHandler(writer http.ResponseWriter, _ *http.Request) {
+	cfg := a.cfg
+	writeJSON(writer, http.StatusOK, map[string]any{
+		"version":                     cfg.AppVersion,
+		"appriseConfigured":           cfg.AppriseURL != "",
+		"certVaultConfigured":         cfg.CertVaultURL != "" && cfg.CertVaultAPIKeyValue() != "",
+		"certVaultUrl":                nullableString(cfg.CertVaultURL),
+		"dockerHosts":                 cfg.DockerHostEntries(),
+		"kubernetesEnabled":           cfg.KubernetesEnabled,
+		"kubernetesContexts":          cfg.KubernetesContexts,
+		"kubernetesNamespaces":        cfg.KubernetesNamespaces,
+		"networkCidrs":                cfg.NetworkCIDRs,
+		"healthCheckInterval":         cfg.HealthCheckInterval,
+		"resourceMonitorInterval":     cfg.ResourceMonitorInterval,
+		"updateCheckInterval":         cfg.UpdateCheckInterval,
+		"certificateCheckInterval":    cfg.CertificateCheckInterval,
+		"certificateExpiryThresholds": cfg.CertificateExpiryThresholds,
+		"containerControlsEnabled":    cfg.ContainerControlsEnabled,
+		"healthHistoryEnabled":        cfg.HealthHistoryEnabled,
+		"healthHistoryTtlDays":        cfg.HealthHistoryTTLDays,
+		"resourceMonitorEnabled":      cfg.ResourceMonitorEnabled,
+		"cpuSpikeThreshold":           cfg.CPUSpikeThreshold,
+		"memorySpikeThreshold":        cfg.MemorySpikeThreshold,
+		"spikeDurationThreshold":      cfg.SpikeDurationThreshold,
+		"fileExplorerEnabled":         cfg.FileExplorerEnabled,
+		"terminalEnabled":             cfg.TerminalEnabled,
+	})
+}
+
+func nullableString(value string) any {
+	if value == "" {
+		return nil
+	}
+	return value
 }
 
 func (a *API) readyHandler(writer http.ResponseWriter, _ *http.Request) {
@@ -72,7 +123,7 @@ func (a *API) readyHandler(writer http.ResponseWriter, _ *http.Request) {
 	})
 }
 
-func spaHandler(web fs.FS, files http.Handler, l *limiter) http.Handler {
+func spaHandler(cfg *config.Config, web fs.FS, files http.Handler, l *limiter) http.Handler {
 	return http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		if request.Method != http.MethodGet && request.Method != http.MethodHead {
 			notFound(writer, request)
@@ -85,7 +136,7 @@ func spaHandler(web fs.FS, files http.Handler, l *limiter) http.Handler {
 				return
 			}
 		}
-		allowed, remaining, reset := l.allow(clientIP(request))
+		allowed, remaining, reset := l.allow(clientIP(cfg, request))
 		writer.Header().Set("RateLimit", "limit="+strconv.Itoa(l.limit)+", remaining="+strconv.Itoa(remaining)+", reset="+strconv.Itoa(reset))
 		writer.Header().Set("RateLimit-Policy", strconv.Itoa(l.limit)+";w="+strconv.Itoa(reset))
 		if !allowed {

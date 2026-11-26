@@ -102,7 +102,10 @@ func envDisable(key string) bool {
 func envList(key string, fallback []string) []string {
 	raw := strings.TrimSpace(os.Getenv(key))
 	if raw == "" {
-		return append([]string(nil), fallback...)
+		if fallback == nil {
+			return []string{}
+		}
+		return append([]string{}, fallback...)
 	}
 	result := []string{}
 	for _, item := range strings.Split(raw, ",") {
@@ -359,6 +362,18 @@ func Load() (*Config, error) {
 func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
+}
+
+func (c *Config) DockerHostEntries() []string {
+	entries := make([]string, 0, len(c.DockerHosts))
+	for _, host := range c.DockerHosts {
+		if host.Name == host.Host {
+			entries = append(entries, host.Host)
+		} else {
+			entries = append(entries, host.Name+"="+host.Host)
+		}
+	}
+	return entries
 }
 
 func (c *Config) VerifyPassword(username, password string) bool {
