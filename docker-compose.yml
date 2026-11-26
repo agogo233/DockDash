@@ -9,9 +9,11 @@ services:
       - "${PORT:-3001}:${PORT:-3001}"
     environment:
       - LOG_LEVEL=${LOG_LEVEL:-info}
+      - NODE_ENV=production
       - PORT=${PORT:-3001}
+      - SESSION_SECRET=${SESSION_SECRET:-}
       - DOCKER_HOSTS=${DOCKER_HOSTS:-unix:///var/run/docker.sock}
-      - NETWORK_CIDRS=${NETWORK_CIDRS:-192.168.0.1/24}
+      - NETWORK_CIDRS=${NETWORK_CIDRS:-192.168.0.0/24}
       - DB_PATH=/app/data/dockdash.db
       - HEALTH_CHECK_INTERVAL=${HEALTH_CHECK_INTERVAL:-30000}
       - RESOURCE_MONITOR_INTERVAL=${RESOURCE_MONITOR_INTERVAL:-5000}
@@ -20,11 +22,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - dockdash-data:/app/data
     healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "wget --no-verbose --tries=1 --spider http://localhost:$${PORT}/api/health/ready",
-        ]
+      test: ["CMD", "/app/dockdash", "healthcheck"]
       interval: 30s
       timeout: 5s
       start_period: 10s

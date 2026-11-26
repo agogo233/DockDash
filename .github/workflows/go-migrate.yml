@@ -1,0 +1,77 @@
+name: Go Migration Checks
+
+on:
+  push:
+    branches: [feat/go-backend]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: go-migrate-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify migration
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 11.20.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Lint
+        run: pnpm lint:app
+
+      - name: Format check
+        run: pnpm format:check:app
+
+      - name: Unit tests
+        run: pnpm test
+
+      - name: Build current app
+        run: pnpm build
+
+      - name: Stage client assets for embedding
+        run: mkdir -p internal/assets/web && cp -R dist/client/. internal/assets/web/
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Go tests
+        env:
+          CGO_ENABLED: "1"
+        run: go test ./... -mod=mod
+
+      - name: Go static build
+        env:
+          CGO_ENABLED: "1"
+        run: go build -mod=mod -tags "netgo,osusergo" -ldflags '-s -w -extldflags "-static"' -o dist/dockdash ./cmd/dockdash
+
+      - name: Build container image
+        run: docker build -t dockdash:migration-check .
+
+      - name: Report image size
+        run: docker image inspect dockdash:migration-check --format 'IMAGE_BYTES={{.Size}}'
