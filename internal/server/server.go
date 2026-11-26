@@ -46,6 +46,7 @@ func (a *API) Handler() http.Handler {
 	protected.HandleFunc("GET /api/config", a.configHandler)
 	a.registerCRUDRoutes(protected)
 	a.registerContainerRoutes(protected)
+	a.registerFileRoutes(protected)
 	apiMux.Handle("/api/", withSameOrigin(a.cfg, withAuth(a.cfg, protected)))
 
 	apiHandler := withSession(a.store, withBodyLimit(100*1024, withRateLimit(apiLimiter, a.cfg, apiMux)))

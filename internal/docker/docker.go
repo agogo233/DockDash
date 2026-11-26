@@ -29,8 +29,9 @@ type Host struct {
 }
 
 type hostClient struct {
-	base   string
-	client *http.Client
+	base         string
+	client       *http.Client
+	streamClient *http.Client
 }
 
 type ContainerStats struct {
@@ -72,6 +73,9 @@ type containerItem struct {
 
 type containerInfo struct {
 	Image string `json:"Image"`
+	State struct {
+		Running bool `json:"Running"`
+	} `json:"State"`
 	Config struct {
 		Tty bool `json:"Tty"`
 	} `json:"Config"`
@@ -135,10 +139,10 @@ func newHostClient(endpoint string) *hostClient {
 				return (&net.Dialer{Timeout: clientTimeout}).DialContext(ctx, "unix", socket)
 			},
 		}
-		return &hostClient{base: "http://docker", client: &http.Client{Transport: transport, Timeout: clientTimeout}}
+		return &hostClient{base: "http://docker", client: &http.Client{Transport: transport, Timeout: clientTimeout}, streamClient: &http.Client{Transport: transport}}
 	}
 	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
-		return &hostClient{base: endpoint, client: &http.Client{Timeout: clientTimeout}}
+		return &hostClient{base: endpoint, client: &http.Client{Timeout: clientTimeout}, streamClient: &http.Client{}}
 	}
 	address := endpoint
 	if strings.HasPrefix(address, "tcp://") {
@@ -147,7 +151,7 @@ func newHostClient(endpoint string) *hostClient {
 	if _, _, err := net.SplitHostPort(address); err != nil {
 		address += ":2375"
 	}
-	return &hostClient{base: "http://" + address, client: &http.Client{Timeout: clientTimeout}}
+	return &hostClient{base: "http://" + address, client: &http.Client{Timeout: clientTimeout}, streamClient: &http.Client{}}
 }
 
 func hostID(endpoint string) string {

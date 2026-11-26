@@ -20,7 +20,7 @@ func mockDockerServer(t *testing.T) *httptest.Server {
 		_, _ = w.Write([]byte(`[{"Id":"c1","Names":["/web"],"Image":"nginx:1.25","ImageID":"img1","State":"running","Ports":[{"IP":"0.0.0.0","PrivatePort":80,"PublicPort":8080}]}]`))
 	})
 	mux.HandleFunc("/containers/c1/json", func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"Image":"img1","Config":{"Tty":false},"NetworkSettings":{"Networks":{"bridge":{}}}}`))
+		_, _ = w.Write([]byte(`{"Image":"img1","State":{"Running":true},"Config":{"Tty":false},"NetworkSettings":{"Networks":{"bridge":{}}}}`))
 	})
 	mux.HandleFunc("/images/img1/json", func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`{"RepoDigests":["nginx@sha256:abc"]}`))
