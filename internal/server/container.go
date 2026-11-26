@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"net/http"
 
-	"dockdash/internal/docker"
 	"dockdash/internal/repo"
 )
 
