@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
 
 permissions:
-  actions: write      # 仅供下方"清理旧 workflow runs"步骤使用
+  actions: write # 仅供下方"清理旧 workflow runs"步骤使用
   contents: read
-  packages: write     # 推送镜像到 GHCR 必需
+  packages: write # 推送镜像到 GHCR 必需
 
 jobs:
   build-and-push:
@@ -55,9 +55,9 @@ jobs:
       - name: 构建并推送 Docker 镜像
         uses: docker/build-push-action@v6
         with:
-          file: Dockerfile          # 【可调】仓库实际 Dockerfile 路径
+          file: Dockerfile # 【可调】仓库实际 Dockerfile 路径
           context: .
-          platforms: linux/amd64    # 【可调】当前标准仅 amd64
+          platforms: linux/amd64 # 【可调】当前标准仅 amd64
           push: true
           tags: |
             ghcr.io/${{ env.LOWER_NAME }}:latest
@@ -69,6 +69,6 @@ jobs:
         uses: actions/delete-package-versions@v5
         with:
           package-name: ${{ env.CONTAINER_NAME }}
-          package-type: 'container'
+          package-type: "container"
           min-versions-to-keep: 3
-          delete-only-untagged-versions: 'true'
+          delete-only-untagged-versions: "true"
