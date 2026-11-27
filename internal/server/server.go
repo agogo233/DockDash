@@ -14,19 +14,33 @@ import (
 	"dockdash/internal/config"
 	"dockdash/internal/db"
 	"dockdash/internal/docker"
+	"dockdash/internal/notify"
+	"dockdash/internal/registry"
+	"dockdash/internal/repo"
 	"dockdash/internal/session"
+	"dockdash/internal/updates"
 )
 
 type API struct {
-	cfg    *config.Config
-	db     *sql.DB
-	store  *session.Store
-	docker *docker.Manager
-	ready  atomic.Bool
+	cfg       *config.Config
+	db        *sql.DB
+	store     *session.Store
+	docker    *docker.Manager
+	notifier  *notify.Client
+	github    *updates.GitHub
+	updateJob *updates.Job
+	ready     atomic.Bool
 }
 
 func New(cfg *config.Config, database *sql.DB, store *session.Store) *API {
-	return &API{cfg: cfg, db: database, store: store, docker: docker.NewManager(cfg.DockerHosts)}
+	notifier := notify.New(cfg)
+	github := updates.NewGitHub(cfg.GitHubToken)
+	checker := updates.NewChecker(repo.New(database), registry.New(cfg.GitHubToken), notifier, github, cfg.Locale)
+	return &API{
+		cfg: cfg, db: database, store: store, docker: docker.NewManager(cfg.DockerHosts),
+		notifier: notifier, github: github,
+		updateJob: updates.NewJob(checker, time.Duration(cfg.UpdateCheckInterval)*time.Millisecond),
+	}
 }
 
 func (a *API) MarkReady()    { a.ready.Store(true) }
@@ -34,9 +48,11 @@ func (a *API) MarkNotReady() { a.ready.Store(false) }
 
 func (a *API) Start(ctx context.Context) {
 	a.docker.Start(ctx)
+	a.updateJob.Start(ctx)
 }
 
 func (a *API) Shutdown() {
+	a.updateJob.Stop()
 	a.docker.Shutdown()
 }
 
@@ -57,6 +73,7 @@ func (a *API) Handler() http.Handler {
 	a.registerContainerRoutes(protected)
 	a.registerFileRoutes(protected)
 	a.registerTerminalRoutes(protected)
+	a.registerUpdateRoutes(protected)
 	apiMux.Handle("/api/", withSameOrigin(a.cfg, withAuth(a.cfg, protected)))
 
 	apiHandler := withSession(a.store, withBodyLimit(100*1024, withRateLimit(apiLimiter, a.cfg, apiMux)))

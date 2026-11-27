@@ -13,22 +13,22 @@ import (
 )
 
 type Service struct {
-	ID           string         `json:"id"`
-	Name         string         `json:"name"`
-	Host         string         `json:"host"`
-	Protocol     *string        `json:"protocol,omitempty"`
-	Ports        []int          `json:"ports"`
-	CheckPort    *int           `json:"checkPort,omitempty"`
-	Source       string         `json:"source"`
-	Status       string         `json:"status"`
-	Metadata     map[string]any `json:"metadata"`
-	Labels       []string       `json:"labels"`
-	SourceName   string         `json:"sourceName,omitempty"`
-	OnDashboard  *bool          `json:"onDashboard,omitempty"`
-	CPUPercent   *float64       `json:"cpuPercent,omitempty"`
-	MemoryPercent *float64      `json:"memoryPercent,omitempty"`
-	CreatedAt    string         `json:"createdAt"`
-	UpdatedAt    string         `json:"updatedAt"`
+	ID            string         `json:"id"`
+	Name          string         `json:"name"`
+	Host          string         `json:"host"`
+	Protocol      *string        `json:"protocol,omitempty"`
+	Ports         []int          `json:"ports"`
+	CheckPort     *int           `json:"checkPort,omitempty"`
+	Source        string         `json:"source"`
+	Status        string         `json:"status"`
+	Metadata      map[string]any `json:"metadata"`
+	Labels        []string       `json:"labels"`
+	SourceName    string         `json:"sourceName,omitempty"`
+	OnDashboard   *bool          `json:"onDashboard,omitempty"`
+	CPUPercent    *float64       `json:"cpuPercent,omitempty"`
+	MemoryPercent *float64       `json:"memoryPercent,omitempty"`
+	CreatedAt     string         `json:"createdAt"`
+	UpdatedAt     string         `json:"updatedAt"`
 }
 
 type ServiceWithPosition struct {
@@ -37,10 +37,10 @@ type ServiceWithPosition struct {
 }
 
 type ServicePosition struct {
-	ServiceID string  `json:"serviceId"`
-	X         float64 `json:"x"`
-	Y         float64 `json:"y"`
-	ParentID  *string `json:"parentId,omitempty"`
+	ServiceID string   `json:"serviceId"`
+	X         float64  `json:"x"`
+	Y         float64  `json:"y"`
+	ParentID  *string  `json:"parentId,omitempty"`
 	W         *float64 `json:"w,omitempty"`
 	H         *float64 `json:"h,omitempty"`
 }
@@ -352,6 +352,50 @@ func (r *Repo) UpdateService(id string, patch ServicePatch) error {
 	return tx.Commit()
 }
 
+func (r *Repo) UpdateServiceMetadata(id string, patch map[string]any) error {
+	return r.updateServiceMetadata(id, "", "", "", patch)
+}
+
+func (r *Repo) UpdateServiceMetadataIfUnchanged(id, image, imageTag, imageDigest string, patch map[string]any) (bool, error) {
+	err := r.updateServiceMetadata(id, image, imageTag, imageDigest, patch)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
+}
+
+func (r *Repo) updateServiceMetadata(id, image, imageTag, imageDigest string, patch map[string]any) error {
+	tx, err := r.db.Begin()
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	var raw string
+	if err := tx.QueryRow(`SELECT metadata FROM services WHERE id = ?`, id).Scan(&raw); err != nil {
+		return err
+	}
+	metadata := parseMetadata(raw)
+	if image != "" {
+		if current, _ := metadata["image"].(string); current != image {
+			return sql.ErrNoRows
+		}
+		if current, _ := metadata["imageTag"].(string); current != imageTag {
+			return sql.ErrNoRows
+		}
+		if current, _ := metadata["imageDigest"].(string); current != imageDigest {
+			return sql.ErrNoRows
+		}
+	}
+	for key, value := range patch {
+		metadata[key] = value
+	}
+	if _, err := tx.Exec(`UPDATE services SET metadata = ?, updated_at = ? WHERE id = ?`,
+		encodeJSON(metadata), nowTimestamp(), id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (r *Repo) DeleteService(id string) error {
 	tx, err := r.db.Begin()
 	if err != nil {
@@ -487,8 +531,8 @@ func (r *Repo) AssignLabels(serviceIDs, additions []string) ([]Service, error) {
 	}
 	if len(missing) > 0 {
 		return nil, &BatchLabelError{
-			Message: "Services not found: " + strings.Join(missing, ", "),
-			Status:  404,
+			Message:    "Services not found: " + strings.Join(missing, ", "),
+			Status:     404,
 			ServiceIDs: missing,
 		}
 	}
@@ -522,8 +566,8 @@ func (r *Repo) AssignLabels(serviceIDs, additions []string) ([]Service, error) {
 	}
 	if len(overLimit) > 0 {
 		return nil, &BatchLabelError{
-			Message: fmt.Sprintf("Label limit (20) exceeded for: %s", strings.Join(overLimit, ", ")),
-			Status:  400,
+			Message:    fmt.Sprintf("Label limit (20) exceeded for: %s", strings.Join(overLimit, ", ")),
+			Status:     400,
 			ServiceIDs: overLimitIDs,
 		}
 	}
