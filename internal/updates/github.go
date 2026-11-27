@@ -190,7 +190,7 @@ func (g *GitHub) fetchChangelog(ctx context.Context, repository, currentTag, lat
 				continue
 			}
 			seen[key] = true
-			releases = append(releases, toRelease(&item))
+			releases = append(releases, *toRelease(&item))
 		}
 		if len(pageReleases) < releasePageSize {
 			complete = true
