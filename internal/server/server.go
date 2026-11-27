@@ -15,6 +15,7 @@ import (
 	"dockdash/internal/certvault"
 	"dockdash/internal/config"
 	"dockdash/internal/db"
+	"dockdash/internal/discovery"
 	"dockdash/internal/docker"
 	"dockdash/internal/health"
 	"dockdash/internal/monitor"
@@ -30,6 +31,8 @@ type API struct {
 	db          *sql.DB
 	store       *session.Store
 	docker      *docker.Manager
+	kubernetes  *discovery.Kubernetes
+	network     *discovery.Scanner
 	notifier    *notify.Client
 	github      *updates.GitHub
 	updateJob   *updates.Job
@@ -54,6 +57,7 @@ func New(cfg *config.Config, database *sql.DB, store *session.Store) *API {
 	certMonitor := certmonitor.NewMonitor(certService, certVault, notifier, databaseRepo, cfg.Locale, cfg.CertificateExpiryThresholds)
 	return &API{
 		cfg: cfg, db: database, store: store, docker: dockerManager,
+		kubernetes: discovery.NewKubernetes(cfg), network: discovery.NewScanner(),
 		notifier: notifier, github: github,
 		updateJob:   updates.NewJob(checker, time.Duration(cfg.UpdateCheckInterval)*time.Millisecond),
 		healthJob:   health.NewJob(healthChecker, time.Duration(cfg.HealthCheckInterval)*time.Millisecond),
@@ -97,6 +101,7 @@ func (a *API) Handler() http.Handler {
 	protected.HandleFunc("GET /api/config", a.configHandler)
 	a.registerCRUDRoutes(protected)
 	a.registerContainerRoutes(protected)
+	a.registerDiscoveryRoutes(protected)
 	a.registerFileRoutes(protected)
 	a.registerTerminalRoutes(protected)
 	a.registerUpdateRoutes(protected)

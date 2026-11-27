@@ -12,6 +12,8 @@ func (a *API) enrichServices(services []repo.Service) {
 	for i := range services {
 		if services[i].Source == "docker" {
 			services[i].SourceName = a.docker.SourceName(services[i])
+		} else if services[i].Source == "kubernetes" {
+			services[i].SourceName = a.kubernetes.SourceName(services[i])
 		}
 	}
 }

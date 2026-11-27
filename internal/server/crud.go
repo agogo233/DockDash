@@ -233,6 +233,8 @@ func (a *API) getDashboard(writer http.ResponseWriter, _ *http.Request) {
 	for i := range services {
 		if services[i].Source == "docker" {
 			services[i].SourceName = a.docker.SourceName(services[i].Service)
+		} else if services[i].Source == "kubernetes" {
+			services[i].SourceName = a.kubernetes.SourceName(services[i].Service)
 		}
 	}
 	writeJSON(writer, http.StatusOK, map[string]any{"services": services, "links": links})
@@ -246,6 +248,8 @@ func (a *API) getService(writer http.ResponseWriter, request *http.Request) {
 	}
 	if service.Source == "docker" {
 		service.SourceName = a.docker.SourceName(service)
+	} else if service.Source == "kubernetes" {
+		service.SourceName = a.kubernetes.SourceName(service)
 	}
 	writeJSON(writer, http.StatusOK, service)
 }
