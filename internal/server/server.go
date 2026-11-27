@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"dockdash/internal/assets"
+	"dockdash/internal/certmonitor"
+	"dockdash/internal/certvault"
 	"dockdash/internal/config"
 	"dockdash/internal/db"
 	"dockdash/internal/docker"
@@ -24,16 +26,19 @@ import (
 )
 
 type API struct {
-	cfg        *config.Config
-	db         *sql.DB
-	store      *session.Store
-	docker     *docker.Manager
-	notifier   *notify.Client
-	github     *updates.GitHub
-	updateJob  *updates.Job
-	healthJob  *health.Job
-	monitorJob *monitor.Job
-	ready      atomic.Bool
+	cfg         *config.Config
+	db          *sql.DB
+	store       *session.Store
+	docker      *docker.Manager
+	notifier    *notify.Client
+	github      *updates.GitHub
+	updateJob   *updates.Job
+	healthJob   *health.Job
+	monitorJob  *monitor.Job
+	certService *certmonitor.Service
+	certVault   *certvault.Client
+	certJob     *certmonitor.Job
+	ready       atomic.Bool
 }
 
 func New(cfg *config.Config, database *sql.DB, store *session.Store) *API {
@@ -44,12 +49,17 @@ func New(cfg *config.Config, database *sql.DB, store *session.Store) *API {
 	checker := updates.NewChecker(databaseRepo, registry.New(cfg.GitHubToken), notifier, github, cfg.Locale)
 	healthChecker := health.NewChecker(databaseRepo, dockerManager, notifier, cfg.Locale, cfg.HealthHistoryEnabled)
 	resourceMonitor := monitor.New(databaseRepo, dockerManager, notifier, cfg)
+	certService := certmonitor.New(databaseRepo)
+	certVault := certvault.New(cfg.CertVaultURL, cfg.CertVaultAPIKeyValue())
+	certMonitor := certmonitor.NewMonitor(certService, certVault, notifier, databaseRepo, cfg.Locale, cfg.CertificateExpiryThresholds)
 	return &API{
 		cfg: cfg, db: database, store: store, docker: dockerManager,
 		notifier: notifier, github: github,
-		updateJob:  updates.NewJob(checker, time.Duration(cfg.UpdateCheckInterval)*time.Millisecond),
-		healthJob:  health.NewJob(healthChecker, time.Duration(cfg.HealthCheckInterval)*time.Millisecond),
-		monitorJob: monitor.NewJob(resourceMonitor, time.Duration(cfg.ResourceMonitorInterval)*time.Millisecond),
+		updateJob:   updates.NewJob(checker, time.Duration(cfg.UpdateCheckInterval)*time.Millisecond),
+		healthJob:   health.NewJob(healthChecker, time.Duration(cfg.HealthCheckInterval)*time.Millisecond),
+		monitorJob:  monitor.NewJob(resourceMonitor, time.Duration(cfg.ResourceMonitorInterval)*time.Millisecond),
+		certService: certService, certVault: certVault,
+		certJob: certmonitor.NewJob(certMonitor, time.Duration(cfg.CertificateCheckInterval)*time.Millisecond),
 	}
 }
 
@@ -61,9 +71,11 @@ func (a *API) Start(ctx context.Context) {
 	a.updateJob.Start(ctx)
 	a.healthJob.Start(ctx)
 	a.monitorJob.Start(ctx)
+	a.certJob.Start(ctx)
 }
 
 func (a *API) Shutdown() {
+	a.certJob.Stop()
 	a.monitorJob.Stop()
 	a.healthJob.Stop()
 	a.updateJob.Stop()
@@ -89,6 +101,7 @@ func (a *API) Handler() http.Handler {
 	a.registerTerminalRoutes(protected)
 	a.registerUpdateRoutes(protected)
 	a.registerHealthRoutes(protected)
+	a.registerCertificateRoutes(protected)
 	apiMux.Handle("/api/", withSameOrigin(a.cfg, withAuth(a.cfg, protected)))
 
 	apiHandler := withSession(a.store, withBodyLimit(100*1024, withRateLimit(apiLimiter, a.cfg, apiMux)))
