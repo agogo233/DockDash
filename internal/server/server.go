@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"database/sql"
 	"io/fs"
 	"net/http"
@@ -31,6 +32,14 @@ func New(cfg *config.Config, database *sql.DB, store *session.Store) *API {
 func (a *API) MarkReady()    { a.ready.Store(true) }
 func (a *API) MarkNotReady() { a.ready.Store(false) }
 
+func (a *API) Start(ctx context.Context) {
+	a.docker.Start(ctx)
+}
+
+func (a *API) Shutdown() {
+	a.docker.Shutdown()
+}
+
 func (a *API) Handler() http.Handler {
 	apiLimiter := newLimiter(300, time.Minute)
 	apiMux := http.NewServeMux()
@@ -47,6 +56,7 @@ func (a *API) Handler() http.Handler {
 	a.registerCRUDRoutes(protected)
 	a.registerContainerRoutes(protected)
 	a.registerFileRoutes(protected)
+	a.registerTerminalRoutes(protected)
 	apiMux.Handle("/api/", withSameOrigin(a.cfg, withAuth(a.cfg, protected)))
 
 	apiHandler := withSession(a.store, withBodyLimit(100*1024, withRateLimit(apiLimiter, a.cfg, apiMux)))

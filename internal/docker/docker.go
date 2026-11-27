@@ -3,6 +3,7 @@ package docker
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -30,6 +31,8 @@ type Host struct {
 
 type hostClient struct {
 	base         string
+	hostHeader   string
+	dial         func(context.Context) (net.Conn, error)
 	client       *http.Client
 	streamClient *http.Client
 }
@@ -127,8 +130,9 @@ type statsResponse struct {
 }
 
 type Manager struct {
-	hosts []Host
-	byID  map[string]Host
+	hosts     []Host
+	byID      map[string]Host
+	terminals *TerminalManager
 }
 
 func newHostClient(endpoint string) *hostClient {
@@ -139,10 +143,32 @@ func newHostClient(endpoint string) *hostClient {
 				return (&net.Dialer{Timeout: clientTimeout}).DialContext(ctx, "unix", socket)
 			},
 		}
-		return &hostClient{base: "http://docker", client: &http.Client{Transport: transport, Timeout: clientTimeout}, streamClient: &http.Client{Transport: transport}}
+		return &hostClient{
+			base: "http://docker", hostHeader: "docker",
+			dial: func(ctx context.Context) (net.Conn, error) {
+				return (&net.Dialer{Timeout: clientTimeout}).DialContext(ctx, "unix", socket)
+			},
+			client: &http.Client{Transport: transport, Timeout: clientTimeout},
+			streamClient: &http.Client{Transport: transport},
+		}
 	}
 	if strings.HasPrefix(endpoint, "http://") || strings.HasPrefix(endpoint, "https://") {
-		return &hostClient{base: endpoint, client: &http.Client{Timeout: clientTimeout}, streamClient: &http.Client{}}
+		parsed, err := url.Parse(endpoint)
+		address := endpoint
+		if err == nil {
+			address = parsed.Host
+		}
+		dialer := &net.Dialer{Timeout: clientTimeout}
+		return &hostClient{
+			base: endpoint, hostHeader: address,
+			dial: func(ctx context.Context) (net.Conn, error) {
+				if strings.HasPrefix(endpoint, "https://") {
+					return tls.DialWithDialer(dialer, "tcp", address, nil)
+				}
+				return dialer.DialContext(ctx, "tcp", address)
+			},
+			client: &http.Client{Timeout: clientTimeout}, streamClient: &http.Client{},
+		}
 	}
 	address := endpoint
 	if strings.HasPrefix(address, "tcp://") {
@@ -151,7 +177,13 @@ func newHostClient(endpoint string) *hostClient {
 	if _, _, err := net.SplitHostPort(address); err != nil {
 		address += ":2375"
 	}
-	return &hostClient{base: "http://" + address, client: &http.Client{Timeout: clientTimeout}, streamClient: &http.Client{}}
+	return &hostClient{
+		base: "http://" + address, hostHeader: address,
+		dial: func(ctx context.Context) (net.Conn, error) {
+			return (&net.Dialer{Timeout: clientTimeout}).DialContext(ctx, "tcp", address)
+		},
+		client: &http.Client{Timeout: clientTimeout}, streamClient: &http.Client{},
+	}
 }
 
 func hostID(endpoint string) string {
@@ -160,7 +192,7 @@ func hostID(endpoint string) string {
 }
 
 func NewManager(hosts []config.DockerHost) *Manager {
-	manager := &Manager{byID: map[string]Host{}}
+	manager := &Manager{byID: map[string]Host{}, terminals: NewTerminalManager()}
 	for _, entry := range hosts {
 		host := Host{ID: hostID(entry.Host), Name: entry.Name, Endpoint: entry.Host, client: newHostClient(entry.Host)}
 		manager.hosts = append(manager.hosts, host)
@@ -173,6 +205,9 @@ func (c *hostClient) request(ctx context.Context, method, path string, body io.R
 	request, err := http.NewRequestWithContext(ctx, method, c.base+path, body)
 	if err != nil {
 		return err
+	}
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
 	}
 	response, err := c.client.Do(request)
 	if err != nil {

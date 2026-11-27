@@ -69,6 +69,8 @@ func main() {
 	store.StartCleanup(ctx)
 
 	api := server.New(cfg, database, store)
+	api.Start(ctx)
+	defer api.Shutdown()
 	httpServer := &http.Server{
 		Addr:              ":" + strconv.Itoa(cfg.Port),
 		Handler:           api.Handler(),
